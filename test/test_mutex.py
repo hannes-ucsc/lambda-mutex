@@ -23,19 +23,18 @@ class TestDynamoDbMutex(unittest.TestCase):
         super(TestDynamoDbMutex, cls).setUpClass()
 
     def test_create(self):
-        m = DynamoDbMutex(random_name(), "myself", 3 * 1000)
+        m = DynamoDbMutex(random_name(), holder="myself", expiration=3)
         assert(m.lock())
         m.release()
 
     def test_create_delete_us_east_1(self):
-        m = DynamoDbMutex(name=random_name(), holder=random_name(),
-                          region_name='us-east-1')
+        m = DynamoDbMutex(random_name(), holder=random_name(), region_name='us-east-1')
         assert(m.lock())
         m.release()
         DynamoDbMutex.delete_table(region_name='us-east-1')
 
     def test_timeout(self):
-        m = DynamoDbMutex(random_name(), "myself", 3 * 1000)
+        m = DynamoDbMutex(random_name(), holder="myself", expiration=3)
         m.lock()
         time.sleep(5)
         assert(m.lock())
@@ -48,20 +47,23 @@ class TestDynamoDbMutex(unittest.TestCase):
         m.release()
 
     def test_with(self):
-        m = DynamoDbMutex(name=random_name(), holder=random_name())
+        class SpecialException(RuntimeError):
+            pass
+        m = DynamoDbMutex(random_name(), holder=random_name())
         try:
             with m:
+                assert m.is_locked()
                 time.sleep(3)
-                raise
-        except:
+                raise SpecialException
+        except SpecialException:
             print("In exception handler")
-            assert(m.is_locked() == False)
+            assert not m.is_locked()
 
     def test_with_fail(self):
         name = random_name()
-        m1 = DynamoDbMutex(name=name, holder=random_name())
+        m1 = DynamoDbMutex(name, holder=random_name())
         m1.lock()
-        m2 = DynamoDbMutex(name=name, holder=random_name())
+        m2 = DynamoDbMutex(name, holder=random_name())
         exceptionHappened = False
         try:
             with m2:
@@ -75,11 +77,11 @@ class TestDynamoDbMutex(unittest.TestCase):
     def test_release_expired(self):
         name = random_name()
         caller = "caller1"
-        m1 = DynamoDbMutex(name=name, holder=caller, timeoutms=2 * 1000)
+        m1 = DynamoDbMutex(name, holder=caller, expiration=2)
         m1.lock()
         time.sleep(3)
         caller = "caller2"
-        m2 = DynamoDbMutex(name=name, holder=caller, timeoutms=2 * 1000)
+        m2 = DynamoDbMutex(name, holder=caller, expiration=2)
         assert(m2.lock())
         m1.release()
         assert(m2.is_locked())

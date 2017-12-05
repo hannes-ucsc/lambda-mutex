@@ -2,6 +2,7 @@ import logging
 import boto3
 import botocore
 import datetime
+import time
 import uuid
 import os
 from boto3.dynamodb.conditions import Attr
@@ -33,7 +34,7 @@ def timestamp_millis():
 
 class MutexTable:
 
-    def __init__(self, region_name='us-west-2'):
+    def __init__(self, region_name=None):
         self.dbresource = boto3.resource('dynamodb', region_name=region_name)
         self.dbclient = boto3.client('dynamodb', region_name=region_name)
         self.table_name = os.environ.get('DD_MUTEX_TABLE_NAME', DEFAULT_MUTEX_TABLE_NAME)
@@ -151,22 +152,42 @@ class MutexTable:
 
 
 class DynamoDbMutex:
-
-    def __init__(self, name, holder=None,
-                 timeoutms=30 * 1000, region_name='us-west-2'):
+    def __init__(self, name, region_name=None, holder=None, expiration=30, timeout=None, blocking=False):
         if holder is None:
             holder = str(uuid.uuid4())
         self.lockname = name
         self.holder = holder
-        self.timeoutms = timeoutms
+        self.expiration = expiration
         self.table = MutexTable(region_name=region_name)
         self.locked = False
+        self.blocking = blocking
+        self.timeout = timeout
 
-    def lock(self):
-        self.table.prune_expired(self.lockname, self.holder)
-        self.locked = self.table.write_lock_item(self.lockname, self.holder, self.timeoutms)
-        logger.info("mutex.lock(): lockname=" + self.lockname + ", locked = " + str(self.locked))
-        return self.locked
+    def lock(self, blocking=None, timeout=None):
+        if blocking is None:
+            blocking = self.blocking
+        if timeout is None:
+            timeout = self.timeout
+        sleep_time = 1
+        max_sleep_time = 30
+        expiration = float('inf') if timeout is None else time.time() + timeout
+        while True:
+            self.table.prune_expired(self.lockname, self.holder)
+            self.locked = self.table.write_lock_item(self.lockname, self.holder, self.expiration * 1000)
+            logger.info("mutex.lock(): lockname=" + self.lockname + ", locked = " + str(self.locked))
+            if self.locked:
+                return True
+            else:
+                if blocking:
+                    time_left = expiration - time.time()
+                    if time_left > 0:
+                        # Use of min() ensures that we perform at least two attempts, one initial attempt and another
+                        # one after the timeout expires
+                        time.sleep(min(time_left, sleep_time))
+                        # Back off exponentially
+                        sleep_time = min(max_sleep_time, sleep_time * 1.5)
+                else:
+                    return False
 
     def release(self):
         released = self.table.clear_lock_item(self.lockname, self.holder)
@@ -186,6 +207,6 @@ class DynamoDbMutex:
         return self.locked
 
     @staticmethod
-    def delete_table(region_name='us-west-2'):
-        table = MutexTable(region_name)
+    def delete_table(region_name=None):
+        table = MutexTable(region_name=region_name)
         table.delete_table()
