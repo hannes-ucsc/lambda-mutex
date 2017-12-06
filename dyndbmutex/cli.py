@@ -1,4 +1,4 @@
-from dyndbmutex.dyndbmutex import setup_logging, DynamoDbMutex, logger
+from dyndbmutex import setup_logging, DynamoDbMutex, logger
 
 
 def main(args):

@@ -8,7 +8,7 @@ from os import path
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
-from dyndbmutex.dyndbmutex import DynamoDbMutex, AcquireLockFailedError, setup_logging
+from dyndbmutex import DynamoDbMutex, AcquireLockFailedError, setup_logging
 
 
 def random_name():
