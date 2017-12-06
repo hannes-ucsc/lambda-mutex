@@ -173,7 +173,7 @@ class DynamoDbMutex:
         expiration = float('inf') if timeout is None else time.time() + timeout
         while True:
             self.table.prune_expired(self.lockname, self.holder)
-            self.locked = self.table.write_lock_item(self.lockname, self.holder, self.expiration * 1000)
+            self.locked = self.table.write_lock_item(self.lockname, self.holder, int(self.expiration * 1000))
             logger.info("mutex.lock(): lockname=" + self.lockname + ", locked = " + str(self.locked))
             if self.locked:
                 return True
